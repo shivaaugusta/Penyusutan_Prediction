@@ -2,63 +2,57 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
-from statsmodels.tsa.arima.model import ARIMA
 import numpy as np
 
-st.title("📊 Analisis & Prediksi Biaya Penyusutan")
+st.set_page_config(page_title="Dashboard Aktiva", layout="wide")
 
-# Upload file Excel
-uploaded_file = st.file_uploader("Upload dataset Excel", type=["xlsx"])
+st.title("📊 Dashboard Analisis & Prediksi Biaya Penyusutan")
 
-if uploaded_file:
+# Upload file
+uploaded_file = st.sidebar.file_uploader("Upload File Excel", type=["xlsx"])
+
+# Pilih menu
+menu = st.sidebar.selectbox("Pilih Menu", ["Analisis", "Prediksi"])
+
+if uploaded_file is not None:
     df = pd.read_excel(uploaded_file)
+    df = df.dropna(how="all").fillna(0)
 
-    st.subheader("📑 Data Asli")
-    st.dataframe(df.head())
+    if menu == "Analisis":
+        st.subheader("📌 Ringkasan Data")
+        col1, col2 = st.columns(2)
+        col1.metric("Total Perolehan", f"Rp {df['Perolehan'].sum():,.0f}")
+        col2.metric("Total Penyusutan", f"Rp {df['Penyusutan'].sum():,.0f}")
 
-    # Pastikan ada kolom Tahun_Perolehan dan Biaya Penyusutan
-    if "Tahun_Perolehan" in df.columns and "Biaya_Penyusutan_Sampai_Bulan" in df.columns:
-        data = df.groupby("Tahun_Perolehan")["Biaya_Penyusutan_Sampai_Bulan"].sum().reset_index()
-        
-        st.subheader("📈 Total Biaya Penyusutan per Tahun")
-        st.line_chart(data.set_index("Tahun_Perolehan"))
+        st.subheader("📈 Visualisasi")
+        top10 = df.groupby("Jenis Aktiva")["Perolehan"].sum().nlargest(10)
+        fig, ax = plt.subplots()
+        top10.plot(kind="bar", ax=ax)
+        st.pyplot(fig)
 
-        # Pilih metode prediksi
-        model_choice = st.selectbox("Pilih metode prediksi:", 
-                                    ["Regresi Linier", "Random Forest", "ARIMA"])
+    elif menu == "Prediksi":
+        st.subheader("🔮 Prediksi Biaya Penyusutan")
+        # Ambil data per tahun
+        if "Tahun" in df.columns:
+            data_tahunan = df.groupby("Tahun")["Penyusutan"].sum().reset_index()
 
-        X = data[["Tahun_Perolehan"]]
-        y = data["Biaya_Penyusutan_Sampai_Bulan"]
+            # Linear Regression
+            X = data_tahunan[["Tahun"]]
+            y = data_tahunan["Penyusutan"]
+            model = LinearRegression().fit(X, y)
 
-        next_year = data["Tahun_Perolehan"].max() + 1
+            next_year = data_tahunan["Tahun"].max() + 1
+            prediksi = model.predict([[next_year]])[0]
 
-        if model_choice == "Regresi Linier":
-            model = LinearRegression()
-            model.fit(X, y)
-            pred = model.predict([[next_year]])
+            st.write(f"📅 Prediksi biaya penyusutan tahun {next_year}: **Rp {prediksi:,.0f}**")
 
-        elif model_choice == "Random Forest":
-            model = RandomForestRegressor(n_estimators=100, random_state=42)
-            model.fit(X, y)
-            pred = model.predict([[next_year]])
-
-        elif model_choice == "ARIMA":
-            # Gunakan ARIMA (1,1,1) contoh sederhana
-            model = ARIMA(y, order=(1,1,1))
-            model_fit = model.fit()
-            pred = model_fit.forecast(steps=1)
-
-        st.subheader("🔮 Hasil Prediksi")
-        st.write(f"Prediksi biaya penyusutan tahun {next_year}: **Rp {pred[0]:,.0f}**")
-
-        # Plot hasil prediksi
-        plt.figure(figsize=(8,5))
-        plt.plot(data["Tahun_Perolehan"], y, marker="o", label="Data Historis")
-        plt.axvline(next_year, color="gray", linestyle="--")
-        plt.scatter(next_year, pred, color="red", label="Prediksi")
-        plt.legend()
-        st.pyplot(plt)
-
-    else:
-        st.error("Dataset harus punya kolom 'Tahun_Perolehan' dan 'Biaya_Penyusutan_Sampai_Bulan'")
+            # Visualisasi
+            fig, ax = plt.subplots()
+            ax.plot(data_tahunan["Tahun"], y, marker="o", label="Data Aktual")
+            ax.plot([next_year], [prediksi], "ro", label="Prediksi")
+            ax.legend()
+            st.pyplot(fig)
+        else:
+            st.warning("Dataset tidak memiliki kolom 'Tahun'.")
+else:
+    st.info("⬅️ Silakan upload file Excel terlebih dahulu.")
